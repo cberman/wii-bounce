@@ -33,6 +33,20 @@ extern char orangemandata[];
 extern int orangemanlength;
 
 int doReload=0, doOff=0;
+u32 wpadDown[4], wpadHeld[4], padDown[4], padHeld[4];
+
+typedef enum {
+	UP,
+	DOWN,
+	LEFT,
+	RIGHT,
+	JUMP,
+	FALL,
+	PAUSE,
+	QUIT,
+	A,
+	B
+} control;
 
 void reload(void) {
 	doReload=1;
@@ -190,6 +204,33 @@ void collide(int *pos, int *prevpos, int *yvel, int *onGround, int *airJumped, i
 	}
 }
 
+int controlUsed(int i, control ctrl) {
+	
+	switch(ctrl) {
+		case UP:
+			return wpadDown[i] & (WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT) || PAD_StickY(i) > 18;
+		case DOWN:
+			return wpadDown[i] & (WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT) || PAD_StickY(i) < -18;
+		case LEFT:
+			return wpadHeld[i] & WPAD_BUTTON_UP || PAD_StickX(i) < -18;
+		case RIGHT:
+			return wpadHeld[i] & WPAD_BUTTON_DOWN || PAD_StickX(i) > 18;
+		case JUMP:
+			return wpadDown[i] & (WPAD_BUTTON_2 | WPAD_BUTTON_A) || padDown[i] & (PAD_BUTTON_A | PAD_BUTTON_Y | PAD_BUTTON_X);
+		case FALL:
+			return wpadDown[i] & (WPAD_BUTTON_1 | WPAD_BUTTON_B) || padDown[i] & PAD_BUTTON_B;
+		case PAUSE:
+			return wpadDown[i] & WPAD_BUTTON_PLUS || padDown[i] & PAD_BUTTON_START;
+		case QUIT:
+			return wpadDown[i] & WPAD_BUTTON_HOME;
+		case A:
+			return wpadHeld[i] & WPAD_BUTTON_A || padHeld[i] & PAD_BUTTON_A;
+		case B:
+			return wpadHeld[i] & WPAD_BUTTON_B || padHeld[i] & PAD_BUTTON_B;
+	}
+	return 0;	
+}
+
 int main() {
 	int res;
  
@@ -269,6 +310,18 @@ int main() {
 			VIDEO_ClearFrameBuffer(rmode,xfb[fbi],COLOR_BLACK);
 		}
 		WPAD_ReadPending(WPAD_CHAN_ALL, countevs);
+		PAD_ScanPads();
+		for(i = 0; i < 4; i++) {
+			res = WPAD_Probe(i, &type);
+			if(res == WPAD_ERR_NONE) {
+				wd = WPAD_Data(i);
+				wpadHeld[i] = WPAD_ButtonsHeld(channel[i]);
+				wpadDown[i] = WPAD_ButtonsDown(channel[i]);
+			}
+			padHeld[i] = PAD_ButtonsHeld(channel[i]);
+			padDown[i] = PAD_ButtonsDown(channel[i]);
+		}
+			
 		
 		MP3Player_PlayBuffer(macabre_mp3,macabre_mp3_size,NULL);
 		
@@ -303,35 +356,29 @@ int main() {
 					yvel[i]--;
 				}
 				
-				res = WPAD_Probe(i, &type);
-				if(res == WPAD_ERR_NONE) {
-					wd = WPAD_Data(i);
-					u32 pressed = WPAD_ButtonsHeld(channel[i]);
-					u32 buttonDown = WPAD_ButtonsDown(channel[i]);
-					if(pressed & WPAD_BUTTON_HOME) reload();
-					if(buttonDown & (WPAD_BUTTON_2 | WPAD_BUTTON_A) && !doubleJumped[i]) {
-						if(onGround[i]) {
-							jumpsTaken[i]++;
-						}
-						else {
-							doubleJumpsTaken[i]++;
-							doubleJumped[i] = 1;
-						}
-						yvel[i] = 20;
+				if(controlUsed(i, QUIT)) reload();
+				if(controlUsed(i, JUMP) && !doubleJumped[i]) {
+					if(onGround[i]) {
+						jumpsTaken[i]++;
 					}
-					if(pressed & WPAD_BUTTON_UP) {
-						pos[i][0] -= 5;
-					}	
-					if(pressed & WPAD_BUTTON_DOWN) {
-						pos[i][0] += 5;
+					else {
+						doubleJumpsTaken[i]++;
+						doubleJumped[i] = 1;
 					}
-					if(buttonDown & WPAD_BUTTON_1) {
-						yvel[i] -= 20;
-					}
-					if(buttonDown & WPAD_BUTTON_PLUS) {
-						state = STATE_PAUSED;
-						pausedPlayer = i;
-					}
+					yvel[i] = 20;
+				}
+				if(controlUsed(i, LEFT)) {
+					pos[i][0] -= 5;
+				}	
+				if(controlUsed(i, RIGHT)) {
+					pos[i][0] += 5;
+				}
+				if(controlUsed(i, FALL)) {
+					yvel[i] -= 20;
+				}
+				if(controlUsed(i, PAUSE)) {
+					state = STATE_PAUSED;
+					pausedPlayer = i;
 				}
 				
 				onGround[i] = 0;
@@ -367,6 +414,7 @@ int main() {
 				
 				prevpos[i][0] = pos[i][0], prevpos[i][1] = pos[i][1];
 				WPAD_Rumble(channel[i], fmax(fmin(rumble[i], 1), 0));
+				PAD_ControlMotor(channel[i], fmax(fmin(rumble[i], 1), 0));
 				rumble[i]--;
 			}
 			break;
@@ -378,21 +426,20 @@ int main() {
 				printf("\x1b[%d;%dHTimes Jumped on: %d", 5 + 6*i, 16, jumpedOn[i]);
 				printf("\x1b[%d;%dHNumber of Succesful Jumps: %d", 5 + 6*i, 45, jumpsMade[i]);
 				
-				u32 pressed = WPAD_ButtonsHeld(channel[i]);
-				u32 buttonDown = WPAD_ButtonsDown(channel[i]);
-				if(buttonDown & WPAD_BUTTON_PLUS && pausedPlayer == i) {
-					if(players == 1) {
-						state = STATE_ADVENTURE;
-					}
-					else {
-						state = STATE_PLAYING;
-					}
-					pausedPlayer = -1;
-				}
-				if(buttonDown & WPAD_BUTTON_HOME) {
+				if(controlUsed(i, QUIT)) {
 					state = STATE_SETUP;
 				}
 				WPAD_Rumble(channel[i], 0);
+				PAD_ControlMotor(channel[i], 0);
+			}
+			if(controlUsed(pausedPlayer, PAUSE)) {
+				if(players == 1) {
+					state = STATE_ADVENTURE;
+				}
+				else {
+					state = STATE_PLAYING;
+				}
+				pausedPlayer = -1;
 			}
 			break;
 		case STATE_SETUP:
@@ -400,11 +447,8 @@ int main() {
 			for(i=0; i<4; i++){
 				res = WPAD_Probe(i, &type);
 				if(res == WPAD_ERR_NONE) {
-					wd = WPAD_Data(0);
-					u32 pressed = WPAD_ButtonsHeld(channel[i]);
-					u32 buttonDown = WPAD_ButtonsDown(channel[i]);
-					if(buttonDown & WPAD_BUTTON_HOME) reload();
-					if(pressed & WPAD_BUTTON_A && pressed & WPAD_BUTTON_B) {
+					if(controlUsed(i, QUIT)) reload();
+					if(controlUsed(i, A) && controlUsed(i, B)) {
 						pausedPlayer = -1;
 						
 						for(i=0; i<4; i++) {
@@ -437,10 +481,10 @@ int main() {
 						plane[0] = 0, plane[1] = 230, plane[2] = 20, plane[3] = 250;
 						planeDir = 1;
 					}
-					if(buttonDown & (WPAD_BUTTON_UP | WPAD_BUTTON_RIGHT)) {
+					if(controlUsed(i, UP)) {
 						players = fmin(4, players+1);
 					}	
-					if(buttonDown & (WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT)) {
+					if(controlUsed(i, DOWN)) {
 						players = fmax(1, players-1);
 					}
 				}
@@ -455,6 +499,7 @@ int main() {
 	}
 	for(i=0; i<players; i++)
 		WPAD_Rumble(channel[i], 0);
+		PAD_ControlMotor(channel[i], 0);
 	
 	if(doReload) {
 		return 0;
