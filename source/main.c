@@ -208,21 +208,24 @@ int controlUsed(int i, control ctrl) {
 	
 	switch(ctrl) {
 		case UP:
-			return wpadDown[i] & (WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT) || PAD_StickY(i) > 18;
+			return wpadDown[i] & (WPAD_BUTTON_RIGHT | WPAD_BUTTON_UP) || padDown[i] & PAD_BUTTON_UP;
 		case DOWN:
-			return wpadDown[i] & (WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT) || PAD_StickY(i) < -18;
+			return wpadDown[i] & (WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT) || padDown[i] & PAD_BUTTON_DOWN;
 		case LEFT:
 			return wpadHeld[i] & WPAD_BUTTON_UP || PAD_StickX(i) < -18;
 		case RIGHT:
 			return wpadHeld[i] & WPAD_BUTTON_DOWN || PAD_StickX(i) > 18;
 		case JUMP:
-			return wpadDown[i] & (WPAD_BUTTON_2 | WPAD_BUTTON_A) || padDown[i] & (PAD_BUTTON_A | PAD_BUTTON_Y | PAD_BUTTON_X);
+			return wpadDown[i] & (WPAD_BUTTON_2 | WPAD_BUTTON_A) || 
+				padDown[i] & (PAD_BUTTON_A | PAD_BUTTON_Y | PAD_BUTTON_X);
 		case FALL:
 			return wpadDown[i] & (WPAD_BUTTON_1 | WPAD_BUTTON_B) || padDown[i] & PAD_BUTTON_B;
 		case PAUSE:
-			return wpadDown[i] & WPAD_BUTTON_PLUS || padDown[i] & PAD_BUTTON_START;
+			return wpadDown[i] & WPAD_BUTTON_PLUS || (padDown[i] & PAD_BUTTON_START && !controlUsed(i,QUIT));
 		case QUIT:
-			return wpadDown[i] & WPAD_BUTTON_HOME;
+			return wpadDown[i] & WPAD_BUTTON_HOME || 
+				padHeld[i] & PAD_TRIGGER_L && padHeld[i] & PAD_TRIGGER_R && 
+				padHeld[i] & PAD_BUTTON_A && padDown[i] & PAD_BUTTON_START;
 		case A:
 			return wpadHeld[i] & WPAD_BUTTON_A || padHeld[i] & PAD_BUTTON_A;
 		case B:
@@ -445,48 +448,45 @@ int main() {
 		case STATE_SETUP:
 			printf("\x1b[%d;%dHPlayers: %d\nPress A + B to start", 2, 1, players);
 			for(i=0; i<4; i++){
-				res = WPAD_Probe(i, &type);
-				if(res == WPAD_ERR_NONE) {
-					if(controlUsed(i, QUIT)) reload();
-					if(controlUsed(i, A) && controlUsed(i, B)) {
-						pausedPlayer = -1;
+				if(controlUsed(i, QUIT)) reload();
+				if(controlUsed(i, A) && controlUsed(i, B)) {
+					pausedPlayer = -1;
+					
+					for(i=0; i<4; i++) {
+						onGround[i] = 1;
+						jumpsTaken[i] = 0;
+						doubleJumpsTaken[i] = 0;
+						jumpedOn[i] = 0;
+						jumpsMade[i] = 0;
+						doubleJumped[i] = 1;
+						score[i] = 0;
+						rumble[i] = 0;
 						
-						for(i=0; i<4; i++) {
-							onGround[i] = 1;
-							jumpsTaken[i] = 0;
-							doubleJumpsTaken[i] = 0;
-							jumpedOn[i] = 0;
-							jumpsMade[i] = 0;
-							doubleJumped[i] = 1;
-							score[i] = 0;
-							rumble[i] = 0;
-							
-							pos[i][0] = -999;
-							pos[i][1] = 0;
-							prevpos[i][0] = -999;
-							prevpos[i][1] = -999;
-							yvel[i] = 0;
-						
-							WPAD_SetDataFormat(channel[i], WPAD_FMT_BTNS_ACC_IR);
-							WPAD_SetVRes(i, rmode->fbWidth, rmode->xfbHeight);
-						}
-						
-						state = STATE_ADVENTURE;
-						pos[0][0] = 10;
-						for(i=1; i<players; i++) {
-							pos[i][0] = 10 + 600 / (players - 1) * i;
-							state = STATE_PLAYING;
-						}
-						
-						plane[0] = 0, plane[1] = 230, plane[2] = 20, plane[3] = 250;
-						planeDir = 1;
+						pos[i][0] = -999;
+						pos[i][1] = 0;
+						prevpos[i][0] = -999;
+						prevpos[i][1] = -999;
+						yvel[i] = 0;
+					
+						WPAD_SetDataFormat(channel[i], WPAD_FMT_BTNS_ACC_IR);
+						WPAD_SetVRes(i, rmode->fbWidth, rmode->xfbHeight);
 					}
-					if(controlUsed(i, UP)) {
-						players = fmin(4, players+1);
-					}	
-					if(controlUsed(i, DOWN)) {
-						players = fmax(1, players-1);
+					
+					state = STATE_ADVENTURE;
+					pos[0][0] = 10;
+					for(i=1; i<players; i++) {
+						pos[i][0] = 10 + 600 / (players - 1) * i;
+						state = STATE_PLAYING;
 					}
+					
+					plane[0] = 0, plane[1] = 230, plane[2] = 20, plane[3] = 250;
+					planeDir = 1;
+				}
+				if(controlUsed(i, UP)) {
+					players = fmin(4, players+1);
+				}	
+				if(controlUsed(i, DOWN)) {
+					players = fmax(1, players-1);
 				}
 			}
 			break;
